@@ -20,6 +20,7 @@ def get_workflow_file_abspath(filename):
 
 
 WORKFLOW_BUTTONS_REGEX = r'<workflow_buttons */>'
+WORKFLOW_TRANSITION_BUTTONS_REGEX = r'<workflow_transition_buttons */>'
 WORKFLOW_STATUSBAR_REGEX = r'<workflow_statusbar */>'
 
 
@@ -47,8 +48,28 @@ class JunariWorkflowMixin(models.AbstractModel):
             (s['name'], s['label']) for s in self._workflow_definition['states']
         ]
 
-    def button_workflow_action(self):
-        pass
+    def _workflow_get_transition(self, state_name, trans_name):
+        for state in self._workflow_definition['states']:
+            if state.get('name') == state_name:
+                for trans in state.get('transitions'):
+                    if trans.get('name') == trans_name:
+                        return (state, trans)
+        return (False, False)
+
+    def button_workflow_transition(self):
+        workflow_transition_view_id = self.env.ref(
+            self._workflow_transition_view)
+        for rec in self:
+            return {
+                'type': 'ir.actions.act_window',
+                'name': 'Workflow Transition',
+                'res_model': self._name,
+                'res_id': rec.id,
+                'view_mode': 'form',
+                'view_id': workflow_transition_view_id.id,
+                'target': 'new',
+                'context': {}
+            }
 
     @api.model
     def _fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
@@ -57,6 +78,7 @@ class JunariWorkflowMixin(models.AbstractModel):
 
         if view_type == 'form':
             arch = res['arch']
+            context = self.env.context
 
             if re.search(WORKFLOW_STATUSBAR_REGEX, arch):
                 display_states = [
@@ -76,8 +98,8 @@ class JunariWorkflowMixin(models.AbstractModel):
                 for state in self._workflow_definition['states']:
                     for trans in state['transitions']:
                         buttons_xml += '<button string="%s"' % trans['label']
-                        buttons_xml += ' type="object" name="button_workflow_action"'
-                        buttons_xml += ' context="{\'workflow_transition\':\'%s/%s\'}"' % (
+                        buttons_xml += ' type="object" name="button_workflow_transition"'
+                        buttons_xml += ' context="{\'workflow_state\':\'%s\',\'workflow_transition\':\'%s\'}"' % (
                             state['name'], trans['name'])
                         buttons_xml += ' states="%s"' % state['name']
                         if trans.get('class', False):
@@ -85,9 +107,31 @@ class JunariWorkflowMixin(models.AbstractModel):
                         if trans.get('grouops', False):
                             buttons_xml += ' groups = "%s"' % trans['groups']
                         buttons_xml += ' />'
-
                 arch = re.sub(
                     WORKFLOW_BUTTONS_REGEX,
+                    buttons_xml,
+                    arch
+                )
+
+            if re.search(WORKFLOW_TRANSITION_BUTTONS_REGEX, arch):
+                state_name = context.get('workflow_state', False)
+                trans_name = context.get('workflow_transition', False)
+                if not state_name or not trans_name:
+                    raise Exception(
+                        'Workflow state or transition not found in context.')
+                state, trans = self._workflow_get_transition(
+                    state_name, trans_name)
+                if not state or not trans:
+                    raise Exception(
+                        'Workflow state transition "%s/%s" not found.' % (state_name, trans_name))
+                buttons_xml = '<button string="%s" type="object"' % trans['label']
+                buttons_xml += ' name="button_workflow_transition_confirm"'
+                buttons_xml += ' context="{\'workflow_state\':\'%s\',\'workflow_transition\':\'%s\'}"' % (
+                    state['name'], trans['name'])
+                buttons_xml += ' class="oe_highlight" />'
+                buttons_xml += '<button string="Cancel" special="cancel" />'
+                arch = re.sub(
+                    WORKFLOW_TRANSITION_BUTTONS_REGEX,
                     buttons_xml,
                     arch
                 )
