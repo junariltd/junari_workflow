@@ -56,20 +56,45 @@ class JunariWorkflowMixin(models.AbstractModel):
                         return (state, trans)
         return (False, False)
 
+    def _workflow_get_transition_from_context(self):
+        context = self.env.context
+        state_name = context.get('workflow_state', False)
+        trans_name = context.get('workflow_transition', False)
+        if not state_name or not trans_name:
+            raise Exception(
+                'Workflow state or transition not found in context.')
+        state, trans = self._workflow_get_transition(
+            state_name, trans_name)
+        if not state or not trans:
+            raise Exception(
+                'Workflow state transition "%s/%s" not found.' % (state_name, trans_name))
+        return (state, trans)
+
     def button_workflow_transition(self):
-        workflow_transition_view_id = self.env.ref(
-            self._workflow_transition_view)
-        for rec in self:
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'Workflow Transition',
-                'res_model': self._name,
-                'res_id': rec.id,
-                'view_mode': 'form',
-                'view_id': workflow_transition_view_id.id,
-                'target': 'new',
-                'context': {}
-            }
+        context = self.env.context
+        state, trans = self._workflow_get_transition_from_context()
+        transition_screen = trans.get('transition_screen', False)
+        transition_confirmed = context.get(
+            'workflow_transition_confirmed', False)
+        if transition_screen and not transition_confirmed:
+            workflow_transition_view_id = self.env.ref(
+                self._workflow_transition_view)
+            for rec in self:
+                return {
+                    'type': 'ir.actions.act_window',
+                    'name': transition_screen.get('title', 'Workflow Transition'),
+                    'res_model': self._name,
+                    'res_id': rec.id,
+                    'view_mode': 'form',
+                    'view_id': workflow_transition_view_id.id,
+                    'target': 'new',
+                    'context': {}
+                }
+        new_state = trans.get('new_state', False)
+        if new_state:
+            self.write({'state': new_state})
+        if transition_screen:
+            return {'type': 'ir.actions.act_window_close'}
 
     @api.model
     def _fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
@@ -79,6 +104,8 @@ class JunariWorkflowMixin(models.AbstractModel):
         if view_type == 'form':
             arch = res['arch']
             context = self.env.context
+            state_name = context.get('workflow_state', False)
+            trans_name = context.get('workflow_transition', False)
 
             if re.search(WORKFLOW_STATUSBAR_REGEX, arch):
                 display_states = [
@@ -114,20 +141,14 @@ class JunariWorkflowMixin(models.AbstractModel):
                 )
 
             if re.search(WORKFLOW_TRANSITION_BUTTONS_REGEX, arch):
-                state_name = context.get('workflow_state', False)
-                trans_name = context.get('workflow_transition', False)
-                if not state_name or not trans_name:
-                    raise Exception(
-                        'Workflow state or transition not found in context.')
-                state, trans = self._workflow_get_transition(
-                    state_name, trans_name)
-                if not state or not trans:
-                    raise Exception(
-                        'Workflow state transition "%s/%s" not found.' % (state_name, trans_name))
+                state, trans = self._workflow_get_transition_from_context()
                 buttons_xml = '<button string="%s" type="object"' % trans['label']
-                buttons_xml += ' name="button_workflow_transition_confirm"'
-                buttons_xml += ' context="{\'workflow_state\':\'%s\',\'workflow_transition\':\'%s\'}"' % (
-                    state['name'], trans['name'])
+                buttons_xml += ' name="button_workflow_transition"'
+                buttons_xml += (' context="{'
+                                + '\'workflow_state\':\'%s\','
+                                + '\'workflow_transition\':\'%s\','
+                                + '\'workflow_transition_confirmed\':1}"'
+                                ) % (state['name'], trans['name'])
                 buttons_xml += ' class="oe_highlight" />'
                 buttons_xml += '<button string="Cancel" special="cancel" />'
                 arch = re.sub(
