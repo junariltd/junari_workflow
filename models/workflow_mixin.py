@@ -20,8 +20,10 @@ def get_workflow_file_abspath(filename):
 
 
 WORKFLOW_BUTTONS_REGEX = r'<workflow_buttons */>'
-WORKFLOW_TRANSITION_BUTTONS_REGEX = r'<workflow_transition_buttons */>'
 WORKFLOW_STATUSBAR_REGEX = r'<workflow_statusbar */>'
+
+WORKFLOW_TRANSITION_BUTTONS_REGEX = r'<workflow_transition_buttons */>'
+WORKFLOW_TRANSITION_FIELDS_REGEX = r'<workflow_transition_fields */>'
 
 
 class JunariWorkflowMixin(models.AbstractModel):
@@ -154,6 +156,22 @@ class JunariWorkflowMixin(models.AbstractModel):
                 arch = re.sub(
                     WORKFLOW_TRANSITION_BUTTONS_REGEX,
                     buttons_xml,
+                    arch
+                )
+
+            if re.search(WORKFLOW_TRANSITION_FIELDS_REGEX, arch):
+                state, trans = self._workflow_get_transition_from_context()
+                transition_screen = trans.get('transition_screen', False)
+                if not transition_screen:
+                    raise Exception('Transition "%s/%s" does not define a transition_screen.' % (
+                        state['name'], trans['name']))
+                fields = transition_screen.get('fields', False)
+                if not fields:
+                    raise Exception('Transition "%s/%s" does not define transition_screen fields.' % (
+                        state['name'], trans['name']))
+                arch = re.sub(
+                    WORKFLOW_TRANSITION_FIELDS_REGEX,
+                    fields,
                     arch
                 )
 
