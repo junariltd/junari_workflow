@@ -19,7 +19,8 @@ def get_workflow_file_abspath(filename):
         'Could not find workflow file "%s" in addons paths.' % filename)
 
 
-STATUSBAR_REGEX = r'<workflow_statusbar */>'
+WORKFLOW_BUTTONS_REGEX = r'<workflow_buttons */>'
+WORKFLOW_STATUSBAR_REGEX = r'<workflow_statusbar */>'
 
 
 class JunariWorkflowMixin(models.AbstractModel):
@@ -46,6 +47,9 @@ class JunariWorkflowMixin(models.AbstractModel):
             (s['name'], s['label']) for s in self._workflow_definition['states']
         ]
 
+    def button_workflow_action(self):
+        pass
+
     @api.model
     def _fields_view_get(self, view_id=None, view_type='form', toolbar=False, submenu=False):
         res = super(JunariWorkflowMixin, self)._fields_view_get(
@@ -54,16 +58,37 @@ class JunariWorkflowMixin(models.AbstractModel):
         if view_type == 'form':
             arch = res['arch']
 
-            if re.search(STATUSBAR_REGEX, arch):
+            if re.search(WORKFLOW_STATUSBAR_REGEX, arch):
                 display_states = [
                     s['name']
                     for s in self._workflow_definition['states']
                     if not s.get('statusbar_hide', False)
                 ]
                 arch = re.sub(
-                    STATUSBAR_REGEX,
+                    WORKFLOW_STATUSBAR_REGEX,
                     '<field name="state" widget="statusbar" statusbar_visible="%s" />'
                     % ','.join(display_states),
+                    arch
+                )
+
+            if re.search(WORKFLOW_BUTTONS_REGEX, arch):
+                buttons_xml = ''
+                for state in self._workflow_definition['states']:
+                    for trans in state['transitions']:
+                        buttons_xml += '<button string="%s"' % trans['label']
+                        buttons_xml += ' type="object" name="button_workflow_action"'
+                        buttons_xml += ' context="{\'workflow_transition\':\'%s/%s\'}"' % (
+                            state['name'], trans['name'])
+                        buttons_xml += ' states="%s"' % state['name']
+                        if trans.get('class', False):
+                            buttons_xml += ' class="%s"' % trans['class']
+                        if trans.get('grouops', False):
+                            buttons_xml += ' groups = "%s"' % trans['groups']
+                        buttons_xml += ' />'
+
+                arch = re.sub(
+                    WORKFLOW_BUTTONS_REGEX,
+                    buttons_xml,
                     arch
                 )
 
